@@ -1,0 +1,208 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 全局基础样式 */
+@layer base {
+  * {
+    @apply box-border;
+  }
+
+  html {
+    @apply h-full;
+  }
+
+  body {
+    @apply h-full m-0 p-0 antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  /* 滚动条样式 */
+  ::-webkit-scrollbar {
+    @apply w-2 h-2;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-gray-100;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400;
+  }
+
+  .dark ::-webkit-scrollbar-track {
+    @apply bg-gray-800;
+  }
+
+  .dark ::-webkit-scrollbar-thumb {
+    @apply bg-gray-600;
+  }
+
+  .dark ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-500;
+  }
+}
+
+/* 自定义组件样式 */
+@layer components {
+  /* 卡片基础样式 */
+  .card {
+    @apply bg-white rounded-lg shadow-card hover:shadow-card-hover transition-all duration-300 hover:-translate-y-0.5;
+  }
+
+  .dark .card {
+    @apply bg-card-dark;
+  }
+
+  /* 按钮基础样式 */
+  .btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-all duration-200 cursor-pointer;
+    @apply hover:scale-105 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply bg-primary text-white hover:bg-primary-hover;
+  }
+
+  .btn-success {
+    @apply bg-success text-white hover:opacity-90;
+  }
+
+  .btn-warning {
+    @apply bg-warning text-white hover:opacity-90;
+  }
+
+  .btn-danger {
+    @apply bg-danger text-white hover:opacity-90;
+  }
+
+  .btn-ghost {
+    @apply bg-gray-100 text-gray-700 hover:bg-gray-200;
+  }
+
+  .dark .btn-ghost {
+    @apply bg-gray-700 text-gray-200 hover:bg-gray-600;
+  }
+
+  /* 输入框样式 */
+  .input {
+    @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent;
+    @apply bg-white text-text-primary;
+    @apply transition-all duration-200;
+  }
+
+  .dark .input {
+    @apply bg-gray-700 border-gray-600 text-text-dark;
+  }
+
+  /* 标签样式 */
+  .badge {
+    @apply px-2 py-1 text-xs font-medium rounded-full;
+  }
+
+  .badge-primary {
+    @apply bg-primary-light text-primary;
+  }
+
+  .badge-success {
+    @apply bg-green-100 text-success;
+  }
+
+  .badge-warning {
+    @apply bg-orange-100 text-warning;
+  }
+
+  .badge-danger {
+    @apply bg-red-100 text-danger;
+  }
+
+  /* 进度条样式 */
+  .progress-bar {
+    @apply w-full h-2 bg-gray-200 rounded-full overflow-hidden;
+  }
+
+  .dark .progress-bar {
+    @apply bg-gray-700;
+  }
+
+  .progress-fill {
+    @apply h-full bg-primary rounded-full transition-all duration-300;
+  }
+
+  /* 骨架屏动画 */
+  .skeleton {
+    @apply bg-gray-200 animate-pulse;
+  }
+
+  .dark .skeleton {
+    @apply bg-gray-700;
+  }
+}
+
+/* Vue Router 过渡动画 */
+.fade-enter-active,
+.fade-leave-active {
+  @apply transition-opacity duration-300;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  @apply opacity-0;
+}
+
+.slide-fade-enter-active,
+.slide-fade-leave-active {
+  @apply transition-all duration-300;
+}
+
+.slide-fade-enter-from {
+  @apply opacity-0 translate-x-4;
+}
+
+.slide-fade-leave-to {
+  @apply opacity-0 -translate-x-4;
+}
+
+/* 移动端侧边栏动画 */
+.sidebar-enter-active,
+.sidebar-leave-active {
+  @apply transition-transform duration-300;
+}
+
+.sidebar-enter-from,
+.sidebar-leave-to {
+  @apply -translate-x-full;
+}
+
+/* 响应式隐藏类 */
+@media (max-width: 768px) {
+  .hide-mobile {
+    @apply hidden;
+  }
+}
+
+@media (min-width: 769px) {
+  .hide-desktop {
+    @apply hidden;
+  }
+}
+
+/* 自定义工具类 */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
