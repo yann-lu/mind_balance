@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func
-from . import models, schemas
+from sqlalchemy import func, cast, String
+import models, schemas
 from datetime import datetime, date, timezone
 
 # --- User ---
@@ -358,3 +358,74 @@ def set_project_budget(db: Session, budget: schemas.BudgetCreate):
     db.add(new_budget)
     db.commit()
     return new_budget
+
+# --- AI Config ---
+def get_ai_configs(db: Session, user_id: str):
+    """获取用户的所有AI配置"""
+    return db.query(models.AIConfig).filter(
+        cast(models.AIConfig.user_id, String) == str(user_id)
+    ).all()
+
+def get_active_ai_config(db: Session, user_id: str):
+    """获取用户激活的AI配置"""
+    return db.query(models.AIConfig).filter(
+        cast(models.AIConfig.user_id, String) == str(user_id),
+        models.AIConfig.is_active == True
+    ).first()
+
+def create_ai_config(db: Session, user_id: str, config: schemas.AIConfigCreate):
+    """创建AI配置"""
+    db_config = models.AIConfig(
+        user_id=str(user_id),
+        provider=config.provider,
+        api_key=config.api_key,
+        api_base=config.api_base,
+        model=config.model
+    )
+    db.add(db_config)
+    db.commit()
+    db.refresh(db_config)
+    return db_config
+
+def update_ai_config(db: Session, config_id: int, updates: schemas.AIConfigUpdate):
+    """更新AI配置"""
+    config = db.query(models.AIConfig).filter(models.AIConfig.id == config_id).first()
+    if not config:
+        return None
+
+    update_data = updates.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(config, key, value)
+
+    db.commit()
+    db.refresh(config)
+    return config
+
+def delete_ai_config(db: Session, config_id: int):
+    """删除AI配置"""
+    config = db.query(models.AIConfig).filter(models.AIConfig.id == config_id).first()
+    if config:
+        db.delete(config)
+        db.commit()
+        return True
+    return False
+
+def set_active_ai_config(db: Session, user_id: str, config_id: int):
+    """设置激活的AI配置"""
+    # 取消所有配置的激活状态
+    db.query(models.AIConfig).filter(
+        cast(models.AIConfig.user_id, String) == str(user_id)
+    ).update({"is_active": False})
+
+    # 激活指定配置
+    config = db.query(models.AIConfig).filter(
+        models.AIConfig.id == config_id,
+        cast(models.AIConfig.user_id, String) == str(user_id)
+    ).first()
+
+    if config:
+        config.is_active = True
+        db.commit()
+        db.refresh(config)
+        return config
+    return None

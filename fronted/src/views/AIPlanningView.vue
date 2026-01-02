@@ -231,7 +231,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { BaseButton } from '@/components/common'
-import { aiApi, taskApi } from '@/utils/api'
+import { aiApi, taskApi, projectApi } from '@/utils/api'
 import { useTimerStore } from '@/store/timer'
 import { useToastStore } from '@/store/toast'
 
@@ -255,14 +255,66 @@ async function fetchAIPlanning() {
     warnings.value = warningsData || []
 
     // 获取推荐任务
-    const recommendationsData = await aiApi.getTodayRecommendations()
-    recommendations.value = recommendationsData || []
+    const planData = await aiApi.generatePlan({ period: 'today' })
+
+    // 处理返回数据
+    if (planData.warnings) {
+      warnings.value = planData.warnings
+    }
+
+    if (planData.recommendations) {
+      // 需要从任务ID获取完整的任务信息
+      recommendations.value = await Promise.all(
+        planData.recommendations.map(async (rec) => {
+          try {
+            // 获取任务详情
+            const taskDetail = await taskApi.getTaskDetail(rec.id)
+            // 获取项目详情
+            const projectDetail = await projectApi.getProjectDetail(rec.projectId)
+
+            return {
+              ...rec,
+              ...taskDetail,
+              projectName: projectDetail.name,
+              icon: projectDetail.icon,
+              color: projectDetail.color_hex
+            }
+          } catch (err) {
+            console.error('Failed to fetch task details:', err)
+            return rec
+          }
+        })
+      )
+    }
+
+    if (planData.energySuggestions) {
+      energySuggestions.value = await Promise.all(
+        planData.energySuggestions.map(async (suggestion) => {
+          try {
+            const projectDetail = await projectApi.getProjectDetail(suggestion.projectId)
+            return {
+              ...suggestion,
+              name: suggestion.projectName,
+              icon: projectDetail.icon,
+              color: projectDetail.color_hex
+            }
+          } catch (err) {
+            return suggestion
+          }
+        })
+      )
+    }
 
     // 生成学习建议
-    generateDailyTips()
+    if (planData.dailyTips) {
+      dailyTips.value = planData.dailyTips
+    } else {
+      generateDailyTips()
+    }
   } catch (error) {
     console.error('Failed to fetch AI planning:', error)
-    // 使用模拟数据
+    toastStore.showError('获取AI规划数据失败，请先配置AI服务')
+    // 使用模拟数据作为后备
     useMockData()
   } finally {
     loading.value = false

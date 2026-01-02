@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from .. import models, schemas
+import models
+import schemas
 from datetime import date, timedelta
 
 def calculate_variance(db: Session, user_id: str, days: int = 7):

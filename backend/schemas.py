@@ -152,3 +152,56 @@ class EnergyDistribution(BaseModel):
             for i, word in enumerate(field_name.split('_'))
         )
     )
+
+# --- AI Config Schemas ---
+class AIConfigBase(BaseModel):
+    provider: str  # 'deepseek', 'qwen', 'openai'
+    api_key: str
+    api_base: Optional[str] = None
+    model: Optional[str] = None
+
+class AIConfigCreate(AIConfigBase):
+    pass
+
+class AIConfigUpdate(BaseModel):
+    provider: Optional[str] = None
+    api_key: Optional[str] = None
+    api_base: Optional[str] = None
+    model: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class AIConfig(AIConfigBase):
+    id: int
+    user_id: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+# --- AI Planning Schemas ---
+class EnergyWarning(BaseModel):
+    id: str
+    title: str
+    message: str
+    level: str  # 'high', 'medium', 'low'
+    suggestions: List[dict]
+
+class TaskRecommendation(BaseModel):
+    id: str
+    name: str
+    projectName: str
+    icon: str
+    color: str
+    priority: str
+    estimatedTime: str
+    reason: str
+
+class EnergySuggestion(BaseModel):
+    projectName: str
+    icon: str
+    color: str
+    target: int
+    actual: int
+    status: str  # 'balanced', 'unbalanced'
+    suggestion: str

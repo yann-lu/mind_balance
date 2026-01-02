@@ -1,8 +1,7 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Date, Float
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Date, Float, Text
 from sqlalchemy.sql import func
 import uuid
-from .database import Base
+from database import Base
 
 def generate_uuid():
     return str(uuid.uuid4())
@@ -15,14 +14,11 @@ class User(Base):
     full_name = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    projects = relationship("Project", back_populates="owner")
-    time_logs = relationship("TimeLog", back_populates="user")
-
 class Project(Base):
     __tablename__ = "projects"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, ForeignKey("users.id"))
+    user_id = Column(String)  # 不使用外键
     name = Column(String, index=True)
     color_hex = Column(String, default="#000000")
     icon = Column(String, default="fas fa-book")
@@ -30,52 +26,73 @@ class Project(Base):
     status = Column(String, default="active") # active, archived
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    owner = relationship("User", back_populates="projects")
-    tasks = relationship("Task", back_populates="project")
-    budgets = relationship("ProjectBudget", back_populates="project")
-    time_logs = relationship("TimeLog", back_populates="project")
-
 class ProjectBudget(Base):
     __tablename__ = "project_budgets"
 
     id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(String, ForeignKey("projects.id"))
+    project_id = Column(String)  # 不使用外键
     target_percentage = Column(Integer) # 0-100
     valid_from = Column(DateTime(timezone=True), server_default=func.now())
     valid_to = Column(DateTime(timezone=True), nullable=True) # Null means current
-
-    project = relationship("Project", back_populates="budgets")
 
 class Task(Base):
     __tablename__ = "tasks"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    project_id = Column(String, ForeignKey("projects.id"))
+    project_id = Column(String)  # 不使用外键
     title = Column(String, index=True)
     description = Column(String, nullable=True)
     status = Column(String, default="todo") # todo, in_progress, done
     priority = Column(String, default="medium")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    project = relationship("Project", back_populates="tasks")
-    time_logs = relationship("TimeLog", back_populates="task")
-
 class TimeLog(Base):
     __tablename__ = "time_logs"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    task_id = Column(String, ForeignKey("tasks.id"), nullable=True)
-    project_id = Column(String, ForeignKey("projects.id")) # Denormalized for speed
-    user_id = Column(String, ForeignKey("users.id"))
-    
+    task_id = Column(String, nullable=True)  # 不使用外键
+    project_id = Column(String)  # 不使用外键
+    user_id = Column(String)  # 不使用外键
+
     log_type = Column(String) # TIMER, MANUAL
     start_at = Column(DateTime(timezone=True), nullable=True)
     end_at = Column(DateTime(timezone=True), nullable=True)
     duration_seconds = Column(Integer, default=0)
     log_date = Column(Date, server_default=func.current_date())
-    
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    task = relationship("Task", back_populates="time_logs")
-    project = relationship("Project", back_populates="time_logs")
-    user = relationship("User", back_populates="time_logs")
+class AIConfig(Base):
+    """AI配置表"""
+    __tablename__ = "ai_configs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String)  # 不使用外键
+    provider = Column(String, nullable=False)  # 'deepseek', 'qwen', 'openai', etc.
+    api_key = Column(String, nullable=False)
+    api_base = Column(String, nullable=True)  # 自定义API端点
+    model = Column(String, nullable=True)  # 使用的模型名称
+    is_active = Column(Boolean, default=True)  # 是否为当前激活的配置
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+class AIConversation(Base):
+    """AI对话历史表"""
+    __tablename__ = "ai_conversations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String)  # 不使用外键
+    role = Column(String, nullable=False)  # 'system', 'user', 'assistant'
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AISuggestion(Base):
+    """AI学习建议缓存表"""
+    __tablename__ = "ai_suggestions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String)  # 不使用外键
+    suggestion_type = Column(String, nullable=False)  # 'daily_plan', 'energy_warning', 'task_recommendation'
+    content = Column(Text, nullable=False)  # JSON格式的建议内容
+    generated_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=True)  # 缓存过期时间

@@ -2,8 +2,8 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from . import models, schemas, crud, database
-from .services import analysis, statistics
+import models, schemas, crud, database
+from services import analysis, statistics, ai_planning
 
 # Create Tables
 models.Base.metadata.create_all(bind=database.engine)
@@ -205,3 +205,70 @@ def get_energy_distribution(period: str = "week", db: Session = Depends(get_db),
 @app.get("/")
 def read_root():
     return {"message": "MindBalance API is running. Go to /docs for Swagger UI."}
+
+# --- AI Configuration Routes ---
+
+@app.get("/api/ai/configs", response_model=List[schemas.AIConfig])
+def get_ai_configs(db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
+    """获取用户的所有AI配置"""
+    return crud.get_ai_configs(db, user_id)
+
+@app.get("/api/ai/configs/active", response_model=schemas.AIConfig)
+def get_active_ai_config(db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
+    """获取当前激活的AI配置"""
+    config = crud.get_active_ai_config(db, user_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="No active AI configuration found")
+    return config
+
+@app.post("/api/ai/configs", response_model=schemas.AIConfig)
+def create_ai_config(db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id), config: schemas.AIConfigCreate = None):
+    """创建新的AI配置"""
+    return crud.create_ai_config(db, user_id, config)
+
+@app.put("/api/ai/configs/{config_id}", response_model=schemas.AIConfig)
+def update_ai_config(config_id: int, db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id), config: schemas.AIConfigUpdate = None):
+    """更新AI配置"""
+    updated = crud.update_ai_config(db, config_id, config)
+    if not updated:
+        raise HTTPException(status_code=404, detail="AI configuration not found")
+    return updated
+
+@app.delete("/api/ai/configs/{config_id}")
+def delete_ai_config(config_id: int, db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
+    """删除AI配置"""
+    if not crud.delete_ai_config(db, config_id):
+        raise HTTPException(status_code=404, detail="AI configuration not found")
+    return {"message": "AI configuration deleted"}
+
+@app.post("/api/ai/configs/{config_id}/activate", response_model=schemas.AIConfig)
+def activate_ai_config(config_id: int, db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
+    """激活指定的AI配置"""
+    config = crud.set_active_ai_config(db, user_id, config_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="AI configuration not found")
+    return config
+
+# --- AI Planning Routes ---
+
+@app.get("/api/ai/warnings")
+async def get_energy_warnings(db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
+    """获取精力预警"""
+    warnings = await ai_planning.get_energy_warnings(db, user_id)
+    return warnings
+
+@app.get("/api/ai/recommendations")
+async def get_recommendations(db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
+    """获取今日任务推荐"""
+    result = await ai_planning.generate_daily_plan(db, user_id)
+    if 'error' in result:
+        raise HTTPException(status_code=500, detail=result['error'])
+    return result.get('recommendations', [])
+
+@app.post("/api/ai/generate-plan")
+async def generate_plan(db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
+    """生成新的AI学习计划"""
+    result = await ai_planning.generate_daily_plan(db, user_id)
+    if 'error' in result:
+        raise HTTPException(status_code=500, detail=result['error'])
+    return result

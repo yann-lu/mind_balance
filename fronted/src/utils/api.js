@@ -146,12 +146,7 @@ export const aiApi = {
 
   // 获取精力预警
   getEnergyWarnings() {
-    return request.get('/ai/energy-warnings')
-  },
-
-  // 调整任务优先级
-  adjustPriority(taskId, priority) {
-    return request.post(`/ai/adjust-priority`, { taskId, priority })
+    return request.get('/ai/warnings')
   },
 
   // 生成学习计划
