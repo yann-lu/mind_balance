@@ -179,17 +179,29 @@ def get_tasks(db: Session, project_id: str = None):
     query = db.query(models.Task)
     if project_id:
         query = query.filter(models.Task.project_id == project_id)
-    
+
     tasks = query.all()
     results = []
+    # 状态映射: todo -> pending, in_progress -> in_progress, done -> completed
+    status_map = {
+        'todo': 'pending',
+        'in_progress': 'in_progress',
+        'done': 'completed'
+    }
+
     for t in tasks:
         # Get project name
         project = db.query(models.Project).filter(models.Project.id == t.project_id).first()
         t.project_name = project.name if project else "Unknown"
-        
+
         # Calculate duration
         total = db.query(func.sum(models.TimeLog.duration_seconds)).filter(models.TimeLog.task_id == t.id).scalar()
         t.total_duration = total or 0
+
+        # 映射状态到前端期望的格式
+        original_status = t.status
+        t.status = status_map.get(original_status, original_status)
+
         results.append(t)
     return results
 
@@ -198,32 +210,48 @@ def create_task(db: Session, task: schemas.TaskCreate):
     db.add(db_task)
     db.commit()
     db.refresh(db_task)
-    
+
     # Populate for response
     project = db.query(models.Project).filter(models.Project.id == db_task.project_id).first()
     db_task.project_name = project.name if project else ""
     db_task.total_duration = 0
-    
+
+    # 映射状态到前端期望的格式
+    status_map = {
+        'todo': 'pending',
+        'in_progress': 'in_progress',
+        'done': 'completed'
+    }
+    db_task.status = status_map.get(db_task.status, db_task.status)
+
     return db_task
 
 def update_task(db: Session, task_id: str, updates: schemas.TaskUpdate):
     task = db.query(models.Task).filter(models.Task.id == task_id).first()
     if not task:
         return None
-        
+
     update_data = updates.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(task, key, value)
-        
+
     db.commit()
     db.refresh(task)
-    
+
     # Re-populate computed fields for response
     project = db.query(models.Project).filter(models.Project.id == task.project_id).first()
     task.project_name = project.name if project else ""
     total = db.query(func.sum(models.TimeLog.duration_seconds)).filter(models.TimeLog.task_id == task.id).scalar()
     task.total_duration = total or 0
-    
+
+    # 映射状态到前端期望的格式
+    status_map = {
+        'todo': 'pending',
+        'in_progress': 'in_progress',
+        'done': 'completed'
+    }
+    task.status = status_map.get(task.status, task.status)
+
     return task
 
 def delete_task(db: Session, task_id: str):

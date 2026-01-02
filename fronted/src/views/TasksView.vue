@@ -121,6 +121,14 @@
           </select>
         </div>
         <BaseInput v-model="formData.name" label="任务名称" placeholder="例如：复习第三章内容" required :error="errors.name" />
+        <div v-if="editingTask" class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">任务状态</label>
+          <select v-model="formData.status" class="input">
+            <option value="pending">未开始</option>
+            <option value="in_progress">进行中</option>
+            <option value="completed">已完成</option>
+          </select>
+        </div>
         <div class="mb-4">
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">优先级</label>
           <div class="flex gap-2">
@@ -178,7 +186,7 @@ const submitting = ref(false)
 const activeStatus = ref('all')
 const selectedProject = ref('')
 const searchQuery = ref('')
-const formData = ref({ projectId: '', name: '', priority: 'medium', description: '' })
+const formData = ref({ projectId: '', name: '', priority: 'medium', status: 'pending', description: '' })
 const errors = ref({})
 const addTimeModalOpen = ref(false)
 const addingTimeTask = ref(null)
@@ -262,14 +270,14 @@ async function stopTimer() {
 
 function openCreateModal() {
   editingTask.value = null
-  formData.value = { projectId: selectedProject.value || '', name: '', priority: 'medium', description: '' }
+  formData.value = { projectId: selectedProject.value || '', name: '', priority: 'medium', status: 'pending', description: '' }
   errors.value = {}
   modalOpen.value = true
 }
 
 function openEditModal(task) {
   editingTask.value = task
-  formData.value = { projectId: task.projectId, name: task.name, priority: task.priority || 'medium', description: task.description || '' }
+  formData.value = { projectId: task.projectId, name: task.name, priority: task.priority || 'medium', status: task.status || 'pending', description: task.description || '' }
   errors.value = {}
   modalOpen.value = true
 }
@@ -292,8 +300,14 @@ async function handleSubmit() {
   submitting.value = true
   try {
     const payload = { project_id: formData.value.projectId, title: formData.value.name, priority: formData.value.priority, description: formData.value.description }
-    if (editingTask.value) await taskApi.updateTask(editingTask.value.id, payload)
-    else await taskApi.createTask(payload)
+    // 编辑时包含状态字段,需要将前端状态映射回后端格式
+    if (editingTask.value) {
+      const statusMap = { 'pending': 'todo', 'in_progress': 'in_progress', 'completed': 'done' }
+      payload.status = statusMap[formData.value.status] || formData.value.status
+      await taskApi.updateTask(editingTask.value.id, payload)
+    } else {
+      await taskApi.createTask(payload)
+    }
     toastStore.showSuccess(editingTask.value ? '任务更新成功' : '任务创建成功')
     closeModal()
     fetchTasks()
