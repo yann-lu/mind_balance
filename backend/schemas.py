@@ -1,5 +1,6 @@
-from pydantic import BaseModel
-from typing import Optional, List
+import uuid
+from pydantic import BaseModel, ConfigDict
+from typing import Optional, List, Union
 from datetime import datetime, date
 
 # --- Project Schemas ---
@@ -13,9 +14,17 @@ class ProjectBase(BaseModel):
 class ProjectCreate(ProjectBase):
     energy_percent: Optional[int] = 0
 
+class ProjectUpdate(BaseModel):
+    name: Optional[str] = None
+    color_hex: Optional[str] = None
+    icon: Optional[str] = None
+    description: Optional[str] = None
+    energy_percent: Optional[int] = None
+    status: Optional[str] = None
+
 class Project(ProjectBase):
-    id: str
-    user_id: str
+    id: Union[str, uuid.UUID]
+    user_id: Union[str, uuid.UUID]
     
     # Enriched fields
     energy_percent: int = 0
@@ -24,12 +33,11 @@ class Project(ProjectBase):
     total_duration: int = 0
     is_completed: bool = False
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 # --- Budget Schemas ---
 class BudgetCreate(BaseModel):
-    project_id: str
+    project_id: Union[str, uuid.UUID]
     target_percentage: int
 
 # --- Task Schemas ---
@@ -39,7 +47,7 @@ class TaskBase(BaseModel):
     priority: str = "medium"
 
 class TaskCreate(TaskBase):
-    project_id: str
+    project_id: Union[str, uuid.UUID]
 
 class TaskUpdate(BaseModel):
     status: Optional[str] = None
@@ -48,15 +56,14 @@ class TaskUpdate(BaseModel):
     priority: Optional[str] = None
 
 class Task(TaskBase):
-    id: str
-    project_id: str
+    id: Union[str, uuid.UUID]
+    project_id: Union[str, uuid.UUID]
     project_name: str = "" # Enriched
     status: str
     created_at: datetime
     total_duration: int = 0
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 # --- TimeLog Schemas ---
 class ManualTimeLog(BaseModel):
@@ -64,8 +71,8 @@ class ManualTimeLog(BaseModel):
     note: Optional[str] = None
 
 class TimeLogCreate(BaseModel):
-    task_id: Optional[str] = None
-    project_id: str
+    task_id: Optional[Union[str, uuid.UUID]] = None
+    project_id: Union[str, uuid.UUID]
     log_type: str # TIMER, MANUAL
     duration_seconds: int
     log_date: Optional[date] = None
@@ -73,11 +80,10 @@ class TimeLogCreate(BaseModel):
     end_at: Optional[datetime] = None
 
 class TimeLog(BaseModel):
-    id: str
+    id: Union[str, uuid.UUID]
     duration_seconds: int
     log_type: str
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 # --- Analysis Schemas ---
 class VarianceResult(BaseModel):
@@ -87,3 +93,62 @@ class VarianceResult(BaseModel):
     actual_percentage: float
     variance: float
     status: str # "Balanced", "Over-invested", "Under-invested"
+
+# --- Statistics Schemas ---
+class OverviewStats(BaseModel):
+    total_duration: int  # 总学习时长（秒）
+    completed_tasks: int  # 完成的任务数
+    study_days: int  # 学习天数
+    avg_daily_duration: int  # 日均学习时长（秒）
+
+    # 使用别名转换为camelCase供前端使用
+    model_config = ConfigDict(
+        from_attributes=True,
+        populate_by_name=True,
+        alias_generator=lambda field_name: ''.join(
+            word.capitalize() if i > 0 else word
+            for i, word in enumerate(field_name.split('_'))
+        )
+    )
+
+class ProjectTimeDistribution(BaseModel):
+    id: str
+    name: str
+    color_hex: str
+    icon: str
+    duration: int  # 时长（秒）
+
+    # 使用别名转换为camelCase供前端使用
+    model_config = ConfigDict(
+        from_attributes=True,
+        populate_by_name=True,
+        alias_generator=lambda field_name: ''.join(
+            word.capitalize() if i > 0 else word
+            for i, word in enumerate(field_name.split('_'))
+        )
+    )
+
+class DailyTrend(BaseModel):
+    date: str  # 日期字符串，如 "2024-01-01"
+    duration: int  # 时长（秒）
+
+class EnergyDistribution(BaseModel):
+    id: str
+    name: str
+    color_hex: str
+    icon: str
+    targetEnergy: int  # 目标精力百分比
+    actualEnergy: int  # 实际精力百分比
+    totalDuration: int  # 总时长（秒）
+    completedTasks: int  # 完成任务数
+    totalTasks: int  # 总任务数
+
+    # 使用别名转换为camelCase供前端使用
+    model_config = ConfigDict(
+        from_attributes=True,
+        populate_by_name=True,
+        alias_generator=lambda field_name: ''.join(
+            word.capitalize() if i > 0 else word
+            for i, word in enumerate(field_name.split('_'))
+        )
+    )

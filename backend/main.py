@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from . import models, schemas, crud, database
-from .services import analysis
+from .services import analysis, statistics
 
 # Create Tables
 models.Base.metadata.create_all(bind=database.engine)
@@ -73,75 +73,134 @@ def startup_event():
 
 def get_current_user_id(db: Session = Depends(get_db)):
     user = crud.get_user_by_email(db, DEMO_USER_EMAIL)
+    if not user:
+        # Fallback if startup didn't run or user missing
+        user = crud.create_user(db, DEMO_USER_EMAIL)
     return user.id
 
 # --- Routes ---
 
-@app.get("/projects", response_model=List[schemas.Project])
+@app.get("/api/projects", response_model=List[schemas.Project])
 def read_projects(db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
     return crud.get_projects(db, user_id)
 
-@app.post("/projects", response_model=schemas.Project)
+@app.post("/api/projects", response_model=schemas.Project)
 def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
-    return crud.create_project(db, project, user_id)
+    try:
+        print(f"Creating project: {project}")
+        return crud.create_project(db, project, user_id)
+    except Exception as e:
+        print(f"Error creating project: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/projects/{project_id}/tasks", response_model=List[schemas.Task])
+@app.put("/api/projects/{project_id}", response_model=schemas.Project)
+def update_project(project_id: str, project: schemas.ProjectUpdate, db: Session = Depends(get_db)):
+    updated_project = crud.update_project(db, project_id, project)
+    if not updated_project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return updated_project
+
+@app.delete("/api/projects/{project_id}")
+def delete_project(project_id: str, db: Session = Depends(get_db)):
+    if not crud.delete_project(db, project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    return {"message": "Project deleted"}
+
+@app.post("/api/projects/{project_id}/complete")
+def complete_project(project_id: str, db: Session = Depends(get_db)):
+    if not crud.complete_project(db, project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    return {"message": "Project marked as completed"}
+
+@app.get("/api/projects/{project_id}/tasks", response_model=List[schemas.Task])
 def read_project_tasks(project_id: str, db: Session = Depends(get_db)):
     return crud.get_tasks(db, project_id)
 
-@app.get("/tasks", response_model=List[schemas.Task])
+@app.get("/api/tasks", response_model=List[schemas.Task])
 def read_all_tasks(project_id: Optional[str] = None, db: Session = Depends(get_db)):
     return crud.get_tasks(db, project_id)
 
-@app.post("/tasks", response_model=schemas.Task)
+@app.post("/api/tasks", response_model=schemas.Task)
 def create_task(task: schemas.TaskCreate, db: Session = Depends(get_db)):
     return crud.create_task(db, task)
 
-@app.put("/tasks/{task_id}", response_model=schemas.Task)
+@app.put("/api/tasks/{task_id}", response_model=schemas.Task)
 def update_task(task_id: str, task: schemas.TaskUpdate, db: Session = Depends(get_db)):
     updated = crud.update_task(db, task_id, task)
     if not updated:
         raise HTTPException(status_code=404, detail="Task not found")
     return updated
 
-@app.delete("/tasks/{task_id}")
+@app.delete("/api/tasks/{task_id}")
 def delete_task(task_id: str, db: Session = Depends(get_db)):
     if not crud.delete_task(db, task_id):
          raise HTTPException(status_code=404, detail="Task not found")
     return {"message": "Task deleted"}
 
-@app.post("/tasks/{task_id}/timer/start")
+@app.post("/api/tasks/{task_id}/timer/start")
 def start_timer(task_id: str, db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
     crud.start_timer(db, task_id, user_id)
     return {"message": "Timer started"}
 
-@app.post("/tasks/{task_id}/timer/stop")
+@app.post("/api/tasks/{task_id}/timer/stop")
 def stop_timer(task_id: str, db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
-    crud.stop_timer(db, task_id, user_id)
+    result = crud.stop_timer(db, task_id, user_id)
+    if not result:
+        raise HTTPException(status_code=400, detail="No active timer found for this task")
     return {"message": "Timer stopped"}
 
-@app.post("/tasks/{task_id}/timer/pause")
+@app.post("/api/tasks/{task_id}/timer/pause")
 def pause_timer(task_id: str, db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
-    crud.pause_timer(db, task_id, user_id)
+    result = crud.pause_timer(db, task_id, user_id)
+    if not result:
+        raise HTTPException(status_code=400, detail="No active timer found for this task")
     return {"message": "Timer paused"}
 
-@app.post("/tasks/{task_id}/time-manual")
+@app.post("/api/tasks/{task_id}/time-manual")
 def add_manual_time(task_id: str, data: schemas.ManualTimeLog, db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
     crud.log_manual_time(db, task_id, data, user_id)
     return {"message": "Time added"}
 
-@app.post("/timelogs", response_model=schemas.TimeLog)
+@app.post("/api/timelogs", response_model=schemas.TimeLog)
 def create_timelog(log: schemas.TimeLogCreate, db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
     return crud.create_time_log(db, log, user_id)
 
-@app.post("/budgets", response_model=schemas.BudgetCreate) # returning simplified for now
+@app.post("/api/budgets", response_model=schemas.BudgetCreate) # returning simplified for now
 def set_budget(budget: schemas.BudgetCreate, db: Session = Depends(get_db)):
     crud.set_project_budget(db, budget)
     return budget
 
-@app.get("/analysis/variance", response_model=List[schemas.VarianceResult])
+@app.get("/api/analysis/variance", response_model=List[schemas.VarianceResult])
 def get_variance(days: int = 7, db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
     return analysis.calculate_variance(db, user_id, days)
+
+# --- Statistics Routes ---
+
+@app.get("/api/statistics/overview")
+def get_overview(period: str = "week", db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
+    """获取概览统计数据"""
+    stats = statistics.get_overview_stats(db, user_id, period)
+    return stats.model_dump(by_alias=True)
+
+@app.get("/api/statistics/project-time")
+def get_project_time(period: str = "week", db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
+    """获取项目时间分布"""
+    projects = statistics.get_project_time_distribution(db, user_id, period)
+    return [p.model_dump(by_alias=True) for p in projects]
+
+@app.get("/api/statistics/daily-trend")
+def get_daily_trend(period: str = "week", db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
+    """获取每日学习时长趋势"""
+    trends = statistics.get_daily_trend(db, user_id, period)
+    return [t.model_dump(by_alias=True) for t in trends]
+
+@app.get("/api/statistics/energy")
+def get_energy_distribution(period: str = "week", db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
+    """获取精力分配对比"""
+    energy = statistics.get_energy_distribution(db, user_id, period)
+    return [e.model_dump(by_alias=True) for e in energy]
 
 @app.get("/")
 def read_root():

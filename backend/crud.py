@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from . import models, schemas
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 
 # --- User ---
 def get_user_by_email(db: Session, email: str):
@@ -77,6 +77,103 @@ def create_project(db: Session, project: schemas.ProjectCreate, user_id: str):
     
     return db_project
 
+def update_project(db: Session, project_id: str, updates: schemas.ProjectUpdate):
+    project = db.query(models.Project).filter(models.Project.id == project_id).first()
+    if not project:
+        return None
+        
+    # Separate energy_percent for budget update
+    update_data = updates.model_dump(exclude_unset=True)
+    energy_percent = update_data.pop('energy_percent', None)
+    
+    # Update Project fields
+    for key, value in update_data.items():
+        setattr(project, key, value)
+        
+    db.add(project) # Mark as modified
+    
+    # Update Budget if energy_percent is provided
+    if energy_percent is not None:
+        # Close old budget
+        current_budget = db.query(models.ProjectBudget).filter(
+            models.ProjectBudget.project_id == project_id,
+            models.ProjectBudget.valid_to == None
+        ).first()
+        
+        if current_budget:
+            # If nothing changed, do nothing
+            if current_budget.target_percentage != energy_percent:
+                current_budget.valid_to = datetime.now(timezone.utc)
+                db.add(current_budget)
+                
+                new_budget = models.ProjectBudget(
+                    project_id=project_id,
+                    target_percentage=energy_percent
+                )
+                db.add(new_budget)
+        else:
+             # Create first budget if somehow missing
+            new_budget = models.ProjectBudget(
+                project_id=project_id,
+                target_percentage=energy_percent
+            )
+            db.add(new_budget)
+
+    db.commit()
+    db.refresh(project)
+    
+    # Prepare response (populate transient fields)
+    # We can reuse get_projects logic or just query specifically for this one
+    # Re-fetching is safer to ensure all counts/stats are correct
+    # But for efficiency, we might just set what we changed. 
+    # Let's simple-fetch stats again.
+    
+    budget = db.query(models.ProjectBudget).filter(
+        models.ProjectBudget.project_id == project.id,
+        models.ProjectBudget.valid_to == None
+    ).first()
+    project.energy_percent = budget.target_percentage if budget else 0
+    
+    project.total_tasks = db.query(func.count(models.Task.id)).filter(models.Task.project_id == project.id).scalar() or 0
+    project.completed_tasks = db.query(func.count(models.Task.id)).filter(
+            models.Task.project_id == project.id, 
+            models.Task.status == 'done'
+        ).scalar() or 0
+    project.total_duration = db.query(func.sum(models.TimeLog.duration_seconds)).filter(
+            models.TimeLog.project_id == project.id
+        ).scalar() or 0
+    project.is_completed = (project.status == 'completed')
+    
+    return project
+
+def delete_project(db: Session, project_id: str):
+    project = db.query(models.Project).filter(models.Project.id == project_id).first()
+    if project:
+        # SQLAlchemy cascade might handle this if configured, 
+        # but let's be explicit if needed or rely on cascade. 
+        # Assuming cascade is NOT configured in models (checked models.py, it's not explicit 'cascade="all, delete"'), 
+        # we might need to delete related items or rely on FK constraints failing.
+        # Let's check models.py again. relationships don't have cascade.
+        # So we should delete related data or update models. 
+        # For simplicity, let's delete tasks and logs first.
+        
+        db.query(models.TimeLog).filter(models.TimeLog.project_id == project_id).delete()
+        db.query(models.Task).filter(models.Task.project_id == project_id).delete()
+        db.query(models.ProjectBudget).filter(models.ProjectBudget.project_id == project_id).delete()
+        
+        db.delete(project)
+        db.commit()
+        return True
+    return False
+
+def complete_project(db: Session, project_id: str):
+    project = db.query(models.Project).filter(models.Project.id == project_id).first()
+    if project:
+        project.status = 'completed'
+        db.commit()
+        return True
+    return False
+
 # --- Tasks ---
 def get_tasks(db: Session, project_id: str = None):
     query = db.query(models.Task)
@@ -144,13 +241,13 @@ def start_timer(db: Session, task_id: str, user_id: str):
     task = db.query(models.Task).filter(models.Task.id == task_id).first()
     if not task:
         return None
-        
+
     log = models.TimeLog(
         task_id=task_id,
         project_id=task.project_id,
         user_id=user_id,
         log_type="TIMER",
-        start_at=datetime.now(),
+        start_at=datetime.now(timezone.utc),
         log_date=date.today()
     )
     db.add(log)
@@ -162,11 +259,12 @@ def stop_timer(db: Session, task_id: str, user_id: str):
     log = db.query(models.TimeLog).filter(
         models.TimeLog.task_id == task_id,
         models.TimeLog.user_id == user_id,
-        models.TimeLog.end_at == None
+        models.TimeLog.end_at.is_(None)
     ).order_by(models.TimeLog.start_at.desc()).first()
-    
+
     if log:
-        log.end_at = datetime.now()
+        # Use timezone-aware datetime to match the model's timezone-aware field
+        log.end_at = datetime.now(timezone.utc)
         # Calculate duration
         delta = log.end_at - log.start_at
         log.duration_seconds = int(delta.total_seconds())
@@ -182,7 +280,7 @@ def log_manual_time(db: Session, task_id: str, manual_data: schemas.ManualTimeLo
     task = db.query(models.Task).filter(models.Task.id == task_id).first()
     if not task:
         return None
-        
+
     log = models.TimeLog(
         task_id=task_id,
         project_id=task.project_id,
@@ -190,8 +288,8 @@ def log_manual_time(db: Session, task_id: str, manual_data: schemas.ManualTimeLo
         log_type="MANUAL",
         duration_seconds=manual_data.duration,
         log_date=date.today(),
-        start_at=datetime.now(), # Just for record
-        end_at=datetime.now()
+        start_at=datetime.now(timezone.utc), # Just for record
+        end_at=datetime.now(timezone.utc)
     )
     db.add(log)
     db.commit()
@@ -221,7 +319,7 @@ def set_project_budget(db: Session, budget: schemas.BudgetCreate):
     current = db.query(models.ProjectBudget).filter(models.ProjectBudget.project_id == budget.project_id).filter(models.ProjectBudget.valid_to == None).first()
     
     if current:
-        current.valid_to = datetime.now()
+        current.valid_to = datetime.now(timezone.utc)
         db.add(current)
     
     # 2. Create new
