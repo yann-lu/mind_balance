@@ -95,6 +95,14 @@ def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/projects/{project_id}", response_model=schemas.Project)
+def read_project(project_id: str, db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
+    """获取单个项目详情"""
+    project = crud.get_project(db, project_id, user_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return project
+
 @app.put("/api/projects/{project_id}", response_model=schemas.Project)
 def update_project(project_id: str, project: schemas.ProjectUpdate, db: Session = Depends(get_db)):
     updated_project = crud.update_project(db, project_id, project)
@@ -121,6 +129,14 @@ def read_project_tasks(project_id: str, db: Session = Depends(get_db)):
 @app.get("/api/tasks", response_model=List[schemas.Task])
 def read_all_tasks(project_id: Optional[str] = None, db: Session = Depends(get_db)):
     return crud.get_tasks(db, project_id)
+
+@app.get("/api/tasks/{task_id}", response_model=schemas.Task)
+def read_task(task_id: str, db: Session = Depends(get_db)):
+    """获取单个任务详情"""
+    task = crud.get_task(db, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
 
 @app.post("/api/tasks", response_model=schemas.Task)
 def create_task(task: schemas.TaskCreate, db: Session = Depends(get_db)):

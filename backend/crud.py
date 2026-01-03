@@ -174,6 +174,57 @@ def complete_project(db: Session, project_id: str):
         return True
     return False
 
+def get_project(db: Session, project_id: str, user_id: str):
+    """获取单个项目详情"""
+    project = db.query(models.Project).filter(
+        models.Project.id == project_id,
+        models.Project.user_id == user_id
+    ).first()
+
+    if not project:
+        return None
+
+    # 填充额外信息
+    budget = db.query(models.ProjectBudget).filter(
+        models.ProjectBudget.project_id == project.id,
+        models.ProjectBudget.valid_to == None
+    ).first()
+    project.energy_percent = budget.target_percentage if budget else 0
+
+    project.total_tasks = db.query(func.count(models.Task.id)).filter(models.Task.project_id == project.id).scalar() or 0
+    project.completed_tasks = db.query(func.count(models.Task.id)).filter(
+            models.Task.project_id == project.id,
+            models.Task.status == 'done'
+        ).scalar() or 0
+    project.total_duration = db.query(func.sum(models.TimeLog.duration_seconds)).filter(
+            models.TimeLog.project_id == project.id
+        ).scalar() or 0
+    project.is_completed = (project.status == 'completed')
+
+    return project
+
+def get_task(db: Session, task_id: str):
+    """获取单个任务详情"""
+    task = db.query(models.Task).filter(models.Task.id == task_id).first()
+    if not task:
+        return None
+
+    # 填充额外信息
+    project = db.query(models.Project).filter(models.Project.id == task.project_id).first()
+    task.project_name = project.name if project else ""
+    task.total_duration = db.query(func.sum(models.TimeLog.duration_seconds)).filter(models.TimeLog.task_id == task.id).scalar() or 0
+
+    # 映射状态
+    status_map = {
+        'todo': 'pending',
+        'in_progress': 'in_progress',
+        'done': 'completed'
+    }
+    original_status = task.status
+    task.status = status_map.get(original_status, original_status)
+
+    return task
+
 # --- Tasks ---
 def get_tasks(db: Session, project_id: str = None):
     query = db.query(models.Task)
