@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Date, Float, Text
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 import uuid
 from database import Base
 
@@ -34,6 +35,21 @@ class ProjectBudget(Base):
     target_percentage = Column(Integer) # 0-100
     valid_from = Column(DateTime(timezone=True), server_default=func.now())
     valid_to = Column(DateTime(timezone=True), nullable=True) # Null means current
+
+    # 关系：一个预算属于一个项目 (多对一)
+    project = relationship(
+        Project,
+        primaryjoin="ProjectBudget.project_id == Project.id",
+        foreign_keys=[project_id]
+    )
+
+# 在两个类都定义完后，再添加 Project.budgets 关系
+Project.budgets = relationship(
+    ProjectBudget,
+    primaryjoin="Project.id == ProjectBudget.project_id",
+    back_populates="project",
+    foreign_keys="[ProjectBudget.project_id]"
+)
 
 class Task(Base):
     __tablename__ = "tasks"

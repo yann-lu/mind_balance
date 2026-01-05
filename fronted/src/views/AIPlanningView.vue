@@ -8,15 +8,58 @@
         </h1>
         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">智能推荐学习任务，优化精力分配</p>
       </div>
-      <BaseButton variant="primary" @click="generatePlan">
-        <i class="fas fa-magic mr-2"></i>
-        重新生成计划
-      </BaseButton>
+      <div class="flex items-center gap-3">
+        <!-- 模式切换开关 -->
+        <div class="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+          <span class="text-sm text-gray-600 dark:text-gray-400">快速模式</span>
+          <button
+            @click="toggleUseAI"
+            :disabled="loading"
+            class="relative w-12 h-6 rounded-full transition-colors"
+            :class="useAI ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'"
+          >
+            <div
+              class="absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform"
+              :class="useAI ? 'left-7' : 'left-1'"
+            ></div>
+          </button>
+          <span class="text-sm text-gray-600 dark:text-gray-400">AI深度</span>
+        </div>
+
+        <BaseButton variant="primary" @click="generatePlan" :disabled="loading">
+          <i class="fas fa-magic mr-2"></i>
+          {{ loading ? '生成中...' : '重新生成计划' }}
+        </BaseButton>
+      </div>
+    </div>
+
+    <!-- AI模式提示 -->
+    <div v-if="useAI && !loading" class="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg flex items-start gap-3">
+      <i class="fas fa-info-circle text-blue-500 mt-0.5"></i>
+      <div class="text-sm text-blue-700 dark:text-blue-300">
+        <strong>AI深度分析模式已启用</strong> - 将使用AI完整分析你的学习数据,预计需要15-25秒。推荐理由会更个性化。
+      </div>
     </div>
 
     <!-- 加载状态 -->
     <div v-if="loading" class="space-y-6">
-      <div class="card p-6">
+      <!-- 进度提示 -->
+      <div v-if="progressMessage" class="card p-6 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border-2 border-blue-200 dark:border-blue-800">
+        <div class="flex items-center gap-4">
+          <div class="relative">
+            <div class="w-12 h-12 border-4 border-blue-200 dark:border-blue-800 border-t-blue-600 rounded-full animate-spin"></div>
+          </div>
+          <div class="flex-1">
+            <h3 class="font-semibold text-text-primary dark:text-text-dark text-lg mb-1">
+              AI正在分析你的学习数据...
+            </h3>
+            <p class="text-sm text-gray-600 dark:text-gray-400">{{ progressMessage }}</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 骨架屏(如果没有进度消息) -->
+      <div v-else class="card p-6">
         <div class="skeleton h-6 w-1/4 rounded mb-4"></div>
         <div class="space-y-3">
           <div v-for="i in 3" :key="i" class="skeleton h-20 w-full rounded"></div>
@@ -228,7 +271,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { BaseButton } from '@/components/common'
 import { aiApi, taskApi, projectApi } from '@/utils/api'
@@ -239,70 +282,351 @@ const router = useRouter()
 const timerStore = useTimerStore()
 const toastStore = useToastStore()
 
+// 模式选择
+const useAI = ref(false)  // false=快速模式(规则引擎), true=AI深度分析模式
+const useStream = ref(true)  // 是否使用流式输出(优化体验)
+
 // 数据状态
 const loading = ref(false)
+const progressMessage = ref('')  // 进度提示信息
 const warnings = ref([])
 const recommendations = ref([])
 const energySuggestions = ref([])
 const dailyTips = ref([])
 
-// 获取AI规划数据
-async function fetchAIPlanning() {
-  loading.value = true
-  try {
-    // 获取精力预警
-    const warningsData = await aiApi.getEnergyWarnings()
-    warnings.value = warningsData || []
+// 切换AI模式
+function toggleUseAI() {
+  useAI.value = !useAI.value
+  console.log(`[AI规划] 模式已切换: ${useAI.value ? 'AI深度分析' : '快速模式'}`)
+  toastStore.showInfo(
+    useAI.value
+      ? '已切换到AI深度分析模式,正在重新生成...'
+      : '已切换到快速模式,正在重新生成...'
+  )
+  // 自动重新生成计划
+  generatePlan()
+}
 
-    // 获取推荐任务
-    const planData = await aiApi.generatePlan({ period: 'today' })
+// 使用SSE流式接收数据
+async function fetchAIPlanningStream() {
+  console.log('[AI规划-流式] 开始接收流式数据')
+  loading.value = true
+  progressMessage.value = '正在初始化...'
+  const startTime = Date.now()
+
+  // 构建URL参数
+  const aiMode = useAI.value ? 'full' : 'false'
+  const url = `/api/ai/generate-plan-stream?period=today&use_ai=${aiMode}`
+
+  console.log(`[AI规划-流式] 连接: ${url}`)
+  console.log(`[AI规划-流式] useAI.value: ${useAI.value}, aiMode: ${aiMode}`)
+
+  try {
+    // 使用fetch获取SSE流
+    const response = await fetch(url)
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+
+      if (done) {
+        console.log('[AI规划-流式] 流式传输完成')
+        break
+      }
+
+      // 解码数据块
+      buffer += decoder.decode(value, { stream: true })
+
+      // 按行分割SSE数据
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''  // 保留未完成的行
+
+      for (const line of lines) {
+        if (line.startsWith('event:')) {
+          const eventType = line.substring(7).trim()
+          console.log(`[AI规划-流式] 事件类型: ${eventType}`)
+        } else if (line.startsWith('data:')) {
+          const data = JSON.parse(line.substring(6).trim())
+          handleSSEEvent(data)
+        }
+      }
+    }
+
+    const totalTime = Date.now() - startTime
+    console.log(`[AI规划-流式] 总耗时: ${totalTime}ms`)
+
+  } catch (error) {
+    console.error('[AI规划-流式] 错误:', error)
+    toastStore.showError('流式接收失败,降级使用普通模式')
+    // 降级到普通API
+    await fetchAIPlanning()
+  } finally {
+    loading.value = false
+    progressMessage.value = ''
+  }
+}
+
+// 处理SSE事件
+function handleSSEEvent(data) {
+  console.log('[AI规划-流式] 处理事件:', data)
+
+  // init事件 - 初始化数据
+  if (data.message === '基础数据已加载') {
+    const initData = data.data
+    if (initData.warnings) warnings.value = initData.warnings
+    if (initData.recommendations) recommendations.value = initData.recommendations
+
+    // 处理 energySuggestions - 需要补充项目详情
+    if (initData.energySuggestions) {
+      Promise.all(
+        initData.energySuggestions.map(async (suggestion) => {
+          try {
+            const projectDetail = await projectApi.getProjectDetail(suggestion.projectId).catch(err => {
+              console.warn(`[AI规划-流式] 获取项目${suggestion.projectId}详情失败:`, err)
+              return null
+            })
+
+            if (projectDetail) {
+              return {
+                ...suggestion,
+                name: suggestion.projectName,
+                icon: projectDetail.icon,
+                color: projectDetail.color_hex
+              }
+            } else {
+              return {
+                ...suggestion,
+                name: suggestion.projectName,
+                icon: 'fas fa-project',
+                color: '#4A90E2'
+              }
+            }
+          } catch (err) {
+            console.error('[AI规划-流式] 处理精力建议时出错:', err)
+            return {
+              ...suggestion,
+              name: suggestion.projectName,
+              icon: 'fas fa-project',
+              color: '#4A90E2'
+            }
+          }
+        })
+      ).then(enrichedData => {
+        energySuggestions.value = enrichedData
+        console.log(`[AI规划-流式] 初始化 - 精力建议已补充项目详情`)
+      })
+    }
+
+    if (initData.dailyTips) dailyTips.value = initData.dailyTips
+    progressMessage.value = '基础数据已加载'
+    toastStore.showSuccess('基础数据已加载,等待AI分析...')
+  }
+
+  // progress事件 - 更新进度
+  else if (data.message && (data.step || data.progress)) {
+    progressMessage.value = data.message
+    console.log(`[AI规划-流式] 进度: ${data.progress || 0}% - ${data.message}`)
+  }
+
+  // update事件 - 更新字段
+  else if (data.field && data.data) {
+    const fieldMap = {
+      'warnings': warnings,
+      'recommendations': recommendations,
+      'energySuggestions': energySuggestions,
+      'dailyTips': dailyTips
+    }
+
+    if (fieldMap[data.field]) {
+      // 特殊处理 energySuggestions - 需要补充项目详情
+      if (data.field === 'energySuggestions') {
+        // 异步补充项目详情
+        Promise.all(
+          data.data.map(async (suggestion) => {
+            try {
+              const projectDetail = await projectApi.getProjectDetail(suggestion.projectId).catch(err => {
+                console.warn(`[AI规划-流式] 获取项目${suggestion.projectId}详情失败:`, err)
+                return null
+              })
+
+              if (projectDetail) {
+                return {
+                  ...suggestion,
+                  name: suggestion.projectName, // 后端返回的是 projectName，前端需要 name
+                  icon: projectDetail.icon,
+                  color: projectDetail.color_hex
+                }
+              } else {
+                return {
+                  ...suggestion,
+                  name: suggestion.projectName,
+                  icon: 'fas fa-project', // 默认图标
+                  color: '#4A90E2' // 默认颜色
+                }
+              }
+            } catch (err) {
+              console.error('[AI规划-流式] 处理精力建议时出错:', err)
+              return {
+                ...suggestion,
+                name: suggestion.projectName,
+                icon: 'fas fa-project',
+                color: '#4A90E2'
+              }
+            }
+          })
+        ).then(enrichedData => {
+          energySuggestions.value = enrichedData
+          console.log(`[AI规划-流式] 精力建议已更新并补充项目详情`)
+        })
+      } else {
+        // 其他字段直接赋值
+        fieldMap[data.field].value = data.data
+      }
+
+      console.log(`[AI规划-流式] 字段更新: ${data.field}`)
+
+      // 显示更新提示
+      const fieldNames = {
+        'warnings': '精力预警',
+        'recommendations': '推荐任务',
+        'energySuggestions': '精力建议',
+        'dailyTips': '学习建议'
+      }
+      toastStore.showInfo(`${fieldNames[data.field]}已更新`)
+    }
+  }
+
+  // complete事件 - 完成
+  else if (data.mode) {
+    progressMessage.value = '完成!'
+    toastStore.showSuccess(data.message || 'AI分析完成!')
+    console.log(`[AI规划-流式] 完成: ${data.mode}`)
+  }
+
+  // error事件 - 错误
+  else if (data.message && data.message.includes('失败')) {
+    toastStore.showError(data.message)
+  }
+}
+
+// 获取AI规划数据(非流式)
+async function fetchAIPlanning() {
+  console.log('[AI规划] 开始获取AI规划数据')
+  loading.value = true
+  const startTime = Date.now()
+
+  try {
+    // 直接调用生成计划接口,传递use_ai参数
+    console.log(`[AI规划] 调用生成计划接口, 模式: ${useAI.value ? 'AI深度分析' : '快速模式'}...`)
+    const step1Start = Date.now()
+
+    const planData = await aiApi.generatePlan({
+      period: 'today',
+      use_ai: useAI.value
+    })
+
+    const step1Time = Date.now() - step1Start
+    console.log(`[AI规划] 生成计划接口返回, 耗时: ${step1Time}ms`)
 
     // 处理返回数据
     if (planData.warnings) {
       warnings.value = planData.warnings
+      console.log(`[AI规划] 预警数量: ${planData.warnings.length}`)
     }
 
-    if (planData.recommendations) {
+    if (planData.recommendations && planData.recommendations.length > 0) {
+      console.log(`[AI规划] 开始获取 ${planData.recommendations.length} 个推荐任务的详情...`)
+      const step2Start = Date.now()
+
       // 需要从任务ID获取完整的任务信息
       recommendations.value = await Promise.all(
-        planData.recommendations.map(async (rec) => {
+        planData.recommendations.map(async (rec, index) => {
           try {
-            // 获取任务详情
-            const taskDetail = await taskApi.getTaskDetail(rec.id)
-            // 获取项目详情
-            const projectDetail = await projectApi.getProjectDetail(rec.projectId)
+            const itemStart = Date.now()
+            console.log(`[AI规划] 获取任务${index + 1}/${planData.recommendations.length}详情: ${rec.id}`)
 
-            return {
-              ...rec,
-              ...taskDetail,
-              projectName: projectDetail.name,
-              icon: projectDetail.icon,
-              color: projectDetail.color_hex
+            // 并行获取任务详情和项目详情,提高效率
+            const [taskDetail, projectDetail] = await Promise.all([
+              taskApi.getTaskDetail(rec.id).catch(err => {
+                console.warn(`[AI规划] 获取任务${rec.id}详情失败:`, err)
+                return null
+              }),
+              projectApi.getProjectDetail(rec.projectId).catch(err => {
+                console.warn(`[AI规划] 获取项目${rec.projectId}详情失败:`, err)
+                return null
+              })
+            ])
+
+            const itemTime = Date.now() - itemStart
+            console.log(`[AI规划] 任务${index + 1}详情获取完成, 耗时: ${itemTime}ms`)
+
+            // 如果获取详情失败,返回原始推荐数据,否则返回合并后的数据
+            if (taskDetail && projectDetail) {
+              return {
+                ...rec,
+                ...taskDetail,
+                projectName: projectDetail.name,
+                icon: projectDetail.icon,
+                color: projectDetail.color_hex
+              }
+            } else {
+              console.warn(`[AI规划] 任务${rec.id}详情不完整,使用原始数据`)
+              return rec
             }
           } catch (err) {
-            console.error('Failed to fetch task details:', err)
+            console.error(`[AI规划] 处理任务${rec.id}时出错:`, err)
             return rec
           }
         })
       )
+
+      const step2Time = Date.now() - step2Start
+      console.log(`[AI规划] 所有推荐任务详情获取完成, 总耗时: ${step2Time}ms`)
+    } else {
+      recommendations.value = []
+      console.log('[AI规划] 没有推荐任务')
     }
 
-    if (planData.energySuggestions) {
+    if (planData.energySuggestions && planData.energySuggestions.length > 0) {
+      console.log(`[AI规划] 开始获取 ${planData.energySuggestions.length} 个精力建议的项目详情...`)
+      const step3Start = Date.now()
+
       energySuggestions.value = await Promise.all(
-        planData.energySuggestions.map(async (suggestion) => {
+        planData.energySuggestions.map(async (suggestion, index) => {
           try {
-            const projectDetail = await projectApi.getProjectDetail(suggestion.projectId)
-            return {
-              ...suggestion,
-              name: suggestion.projectName,
-              icon: projectDetail.icon,
-              color: projectDetail.color_hex
+            const projectDetail = await projectApi.getProjectDetail(suggestion.projectId).catch(err => {
+              console.warn(`[AI规划] 获取精力建议项目${suggestion.projectId}详情失败:`, err)
+              return null
+            })
+
+            if (projectDetail) {
+              return {
+                ...suggestion,
+                name: suggestion.projectName,
+                icon: projectDetail.icon,
+                color: projectDetail.color_hex
+              }
+            } else {
+              return suggestion
             }
           } catch (err) {
+            console.error('[AI规划] 处理精力建议时出错:', err)
             return suggestion
           }
         })
       )
+
+      const step3Time = Date.now() - step3Start
+      console.log(`[AI规划] 精力建议详情获取完成, 耗时: ${step3Time}ms`)
+    } else {
+      energySuggestions.value = []
     }
 
     // 生成学习建议
@@ -311,13 +635,19 @@ async function fetchAIPlanning() {
     } else {
       generateDailyTips()
     }
+
+    const totalTime = Date.now() - startTime
+    console.log(`[AI规划] ✓ 所有数据获取完成, 总耗时: ${totalTime}ms`)
+
   } catch (error) {
-    console.error('Failed to fetch AI planning:', error)
+    console.error('[AI规划] ✗ 获取AI规划数据失败:', error)
+    console.error('[AI规划] 错误堆栈:', error.stack)
     toastStore.showError('获取AI规划数据失败，请先配置AI服务')
     // 使用模拟数据作为后备
     useMockData()
   } finally {
     loading.value = false
+    console.log('[AI规划] loading状态已设置为false')
   }
 }
 
@@ -485,21 +815,40 @@ function applySuggestion(suggestion) {
 }
 
 // 重新生成计划
+// 重新生成计划
 async function generatePlan() {
-  loading.value = true
-  try {
-    await aiApi.generatePlan({ period: 'today' })
-    toastStore.showSuccess('AI计划已更新')
-    await fetchAIPlanning()
-  } catch (error) {
-    console.error('Failed to generate plan:', error)
-    toastStore.showError('生成失败，请重试')
-  } finally {
-    loading.value = false
+  // 使用流式模式获取更好的体验
+  if (useStream.value) {
+    await fetchAIPlanningStream()
+  } else {
+    // 降级到普通模式
+    loading.value = true
+    try {
+      await aiApi.generatePlan({
+        period: 'today',
+        use_ai: useAI.value
+      })
+      toastStore.showSuccess(
+        useAI.value
+          ? 'AI深度分析完成!推荐理由已个性化优化'
+          : '计划已快速生成'
+      )
+      await fetchAIPlanning()
+    } catch (error) {
+      console.error('Failed to generate plan:', error)
+      toastStore.showError('生成失败，请重试')
+    } finally {
+      loading.value = false
+    }
   }
 }
 
 onMounted(() => {
-  fetchAIPlanning()
+  // 初始加载使用流式模式
+  if (useStream.value) {
+    fetchAIPlanningStream()
+  } else {
+    fetchAIPlanning()
+  }
 })
 </script>

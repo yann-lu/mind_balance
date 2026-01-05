@@ -4,7 +4,7 @@ import { useToastStore } from '@/store/toast'
 // 创建axios实例
 const request = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
-  timeout: 15000,
+  timeout: 120000, // 增加到120秒，因为AI规划接口需要调用大模型，响应时间较长
   headers: {
     'Content-Type': 'application/json'
   }

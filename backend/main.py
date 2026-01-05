@@ -1,9 +1,11 @@
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import models, schemas, crud, database
 from services import analysis, statistics, ai_planning
+from services import ai_planning_stream
 
 # Create Tables
 models.Base.metadata.create_all(bind=database.engine)
@@ -28,7 +30,7 @@ def get_db():
         db.close()
 
 # --- Helpers ---
-# In a real app, we'd get user_id from JWT token. 
+# In a real app, we'd get user_id from JWT token.
 # Here we mock it or create a default user on startup.
 DEMO_USER_EMAIL = "demo@mindbalance.ai"
 
@@ -41,27 +43,27 @@ def startup_event():
         # Create some demo projects
         # Project 1
         p1_in = schemas.ProjectCreate(
-            name="Learn Python", 
-            color_hex="#3776AB", 
+            name="Learn Python",
+            color_hex="#3776AB",
             icon="fab fa-python",
             description="Mastering Python for backend dev",
             energy_percent=50
         )
         crud.create_project(db, p1_in, user.id)
-        
+
         # Project 2
         p2_in = schemas.ProjectCreate(
-            name="Database Design", 
+            name="Database Design",
             color_hex="#336791",
             icon="fas fa-database",
             description="SQL, NoSQL and schema optimization",
             energy_percent=30
         )
         crud.create_project(db, p2_in, user.id)
-        
+
         # Project 3
         p3_in = schemas.ProjectCreate(
-            name="English", 
+            name="English",
             color_hex="#FF0000",
             icon="fas fa-language",
             description="Daily reading and vocabulary",
@@ -282,9 +284,67 @@ async def get_recommendations(db: Session = Depends(get_db), user_id: str = Depe
     return result.get('recommendations', [])
 
 @app.post("/api/ai/generate-plan")
-async def generate_plan(db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id)):
-    """生成新的AI学习计划"""
-    result = await ai_planning.generate_daily_plan(db, user_id)
-    if 'error' in result:
-        raise HTTPException(status_code=500, detail=result['error'])
-    return result
+async def generate_plan(
+    request: schemas.GeneratePlanRequest,
+    db: Session = Depends(get_db),
+    user_id = Depends(get_current_user_id)  # 移除类型注解,接受UUID
+):
+    """生成学习计划
+
+    Args:
+        request: 包含 period 和 use_ai 参数的请求体
+        period: 时间周期，支持 "today"(默认), "week", "month"
+        use_ai: 是否使用AI完整分析(True=AI模式约20秒, False=规则引擎模式<0.1秒)
+    """
+    try:
+        result = await ai_planning.generate_daily_plan(
+            db,
+            user_id,
+            request.period,
+            use_ai=request.use_ai
+        )
+        if 'error' in result:
+            raise HTTPException(status_code=500, detail=result['error'])
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error in generate_plan: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/ai/generate-plan-stream")
+async def generate_plan_stream(
+    period: str = "today",
+    use_ai: str = "false",
+    db: Session = Depends(get_db),
+    user_id = Depends(get_current_user_id)
+):
+    """流式生成学习计划 (SSE)
+
+    Args:
+        period: 时间周期 ("today", "week", "month")
+        use_ai: AI模式
+            - "false": 快速模式,纯规则引擎
+            - "enhanced": AI增强模式
+            - "full": AI完整分析
+
+    Returns:
+        SSE流式响应
+    """
+    async def event_stream():
+        async for chunk in ai_planning_stream.generate_daily_plan_stream(
+            db, user_id, period, use_ai
+        ):
+            yield chunk
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"  # 禁用Nginx缓冲
+        }
+    )

@@ -180,6 +180,10 @@ class AIConfig(AIConfigBase):
     model_config = ConfigDict(from_attributes=True)
 
 # --- AI Planning Schemas ---
+class GeneratePlanRequest(BaseModel):
+    period: Optional[str] = "today"  # "today", "week", "month"
+    use_ai: Optional[bool] = False  # 是否使用AI完整分析(True=AI模式, False=规则引擎模式)
+
 class EnergyWarning(BaseModel):
     id: str
     title: str

@@ -16,7 +16,15 @@ class AIService:
         self.api_key = api_key
         self.api_base = api_base
         self.model = model
-        self.client = httpx.AsyncClient(timeout=60.0)
+        # 设置更长的超时时间: 连接超时10秒,读取超时120秒
+        self.client = httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                connect=10.0,
+                read=120.0,
+                write=10.0,
+                pool=10.0
+            )
+        )
 
     async def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
         """发送聊天请求"""
