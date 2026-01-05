@@ -9,7 +9,6 @@ const TasksView = () => import('@/views/TasksView.vue')
 const StatisticsView = () => import('@/views/StatisticsView.vue')
 const AIPlanningView = () => import('@/views/AIPlanningView.vue')
 const AIPlanningDebugView = () => import('@/views/AIPlanningDebugView.vue')
-const DeepSeekTestView = () => import('@/views/DeepSeekTestView.vue')
 const SettingsView = () => import('@/views/SettingsView.vue')
 
 // 路由配置
@@ -59,12 +58,6 @@ const routes = [
         name: 'ai-planning-debug',
         component: AIPlanningDebugView,
         meta: { title: 'AI规划调试' }
-      },
-      {
-        path: 'deepseek-test',
-        name: 'deepseek-test',
-        component: DeepSeekTestView,
-        meta: { title: 'DeepSeek测试' }
       },
       {
         path: 'settings',

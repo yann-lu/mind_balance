@@ -89,11 +89,6 @@ const menuItems = computed(() => [
     icon: 'fas fa-robot'
   },
   {
-    path: '/deepseek-test',
-    label: 'DeepSeek测试',
-    icon: 'fas fa-flask'
-  },
-  {
     path: '/settings',
     label: '设置',
     icon: 'fas fa-cog'
