@@ -96,10 +96,14 @@ class VarianceResult(BaseModel):
 
 # --- Statistics Schemas ---
 class OverviewStats(BaseModel):
-    total_duration: int  # 总学习时长（秒）
-    completed_tasks: int  # 完成的任务数
-    study_days: int  # 学习天数
-    avg_daily_duration: int  # 日均学习时长（秒）
+    total_duration: int = 0  # 总学习时长（秒）
+    completed_tasks: int = 0  # 完成的任务数
+    study_days: int = 0  # 学习天数
+    avg_daily_duration: int = 0  # 日均学习时长（秒）
+    today_duration: int = 0  # 今日学习时长（秒）
+    active_projects: int = 0  # 活跃项目数
+    pending_tasks: int = 0  # 待完成任务数
+    energy_rate: int = 0  # 精力达标率（百分比）
 
     # 使用别名转换为camelCase供前端使用
     model_config = ConfigDict(

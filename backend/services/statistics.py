@@ -27,18 +27,31 @@ def get_overview_stats(db: Session, user_id: str, period: str = 'week') -> schem
     """获取概览统计数据"""
     start_date, end_date = get_date_range(period)
 
+    # 今日学习时长
+    today = date.today()
+    today_duration = db.query(func.sum(models.TimeLog.duration_seconds))\
+        .filter(models.TimeLog.user_id == user_id)\
+        .filter(models.TimeLog.log_date == today)\
+        .scalar() or 0
+
+    # 活跃项目数（status为active的项目）
+    active_projects = db.query(func.count(models.Project.id))\
+        .filter(models.Project.user_id == user_id)\
+        .filter(models.Project.status == 'active')\
+        .scalar() or 0
+
+    # 待完成任务数（todo + in_progress状态）
+    pending_tasks = db.query(func.count(models.Task.id))\
+        .join(models.Project, models.Task.project_id == models.Project.id)\
+        .filter(models.Project.user_id == user_id)\
+        .filter(models.Task.status.in_(['todo', 'in_progress']))\
+        .scalar() or 0
+
     # 总学习时长
     total_duration = db.query(func.sum(models.TimeLog.duration_seconds))\
         .filter(models.TimeLog.user_id == user_id)\
         .filter(models.TimeLog.log_date >= start_date)\
         .filter(models.TimeLog.log_date <= end_date)\
-        .scalar() or 0
-
-    # 完成的任务数
-    completed_tasks = db.query(func.count(models.Task.id))\
-        .join(models.Project, models.Task.project_id == models.Project.id)\
-        .filter(models.Project.user_id == user_id)\
-        .filter(models.Task.status == 'done')\
         .scalar() or 0
 
     # 学习天数（有记录的日期数量）
@@ -51,11 +64,32 @@ def get_overview_stats(db: Session, user_id: str, period: str = 'week') -> schem
     # 日均学习时长
     avg_daily_duration = int(total_duration / study_days) if study_days > 0 else 0
 
+    # 完成的任务数
+    completed_tasks = db.query(func.count(models.Task.id))\
+        .join(models.Project, models.Task.project_id == models.Project.id)\
+        .filter(models.Project.user_id == user_id)\
+        .filter(models.Task.status == 'done')\
+        .scalar() or 0
+
+    # 计算精力达标率（简化计算，实际可能需要更复杂的逻辑）
+    all_duration = db.query(func.sum(models.TimeLog.duration_seconds))\
+        .filter(models.TimeLog.user_id == user_id)\
+        .filter(models.TimeLog.log_date >= start_date)\
+        .filter(models.TimeLog.log_date <= end_date)\
+        .scalar() or 0
+
+    # 简化：假设达标率为日均学习时长/目标时长（8小时=28800秒）
+    energy_rate = int((avg_daily_duration / 28800) * 100) if avg_daily_duration > 0 else 0
+
     return schemas.OverviewStats(
         total_duration=total_duration,
         completed_tasks=completed_tasks,
         study_days=study_days,
-        avg_daily_duration=avg_daily_duration
+        avg_daily_duration=avg_daily_duration,
+        today_duration=today_duration,
+        active_projects=active_projects,
+        pending_tasks=pending_tasks,
+        energy_rate=energy_rate
     )
 
 

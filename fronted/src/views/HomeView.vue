@@ -238,7 +238,7 @@ import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { useTimerStore } from '@/store/timer'
 import { useToastStore } from '@/store/toast'
-import { statisticsApi, aiApi } from '@/utils/api'
+import { statisticsApi, aiApi, taskApi, projectApi } from '@/utils/api'
 import { getGreeting, formatDate, getWeekday, formatDurationShort, formatDuration } from '@/utils/format'
 
 const router = useRouter()
@@ -309,16 +309,13 @@ async function fetchOverviewData() {
     todayDuration.value = data.todayDuration || 0
   } catch (error) {
     console.error('Failed to fetch overview:', error)
-    // 使用模拟数据
     overviewData.value = {
-      activeProjects: 3,
-      pendingTasks: 8,
-      energyRate: 85,
-      projectsTrend: '+12%',
-      tasksTrend: '-5%',
-      energyTrend: '+8%'
+      activeProjects: 0,
+      pendingTasks: 0,
+      energyRate: 0,
+      todayDuration: 0
     }
-    todayDuration.value = 5400 // 1.5小时
+    todayDuration.value = 0
   }
 }
 
@@ -326,89 +323,85 @@ async function fetchOverviewData() {
 async function fetchAiReminders() {
   try {
     const data = await aiApi.getEnergyWarnings()
-    aiReminders.value = data || []
+    // 转换数据格式以匹配前端
+    if (data && Array.isArray(data)) {
+      aiReminders.value = data.map(w => ({
+        id: w.id || Math.random(),
+        type: w.type || 'info',
+        message: w.message || w.warning || '',
+        suggestion: w.suggestion || ''
+      }))
+    } else {
+      aiReminders.value = []
+    }
   } catch (error) {
     console.error('Failed to fetch AI reminders:', error)
-    // 使用模拟数据
-    aiReminders.value = [
-      {
-        id: 1,
-        type: 'warning',
-        message: 'Python项目耗时超过目标20%',
-        suggestion: '建议优先完成英语任务以平衡精力分配'
-      },
-      {
-        id: 2,
-        type: 'success',
-        message: '本周学习时长比上周增加15%',
-        suggestion: '保持这个节奏！'
-      }
-    ]
+    aiReminders.value = []
   }
 }
 
 // 获取今日任务
 async function fetchTodayTasks() {
   try {
-    const data = await taskApi.getTaskList({ date: new Date().toISOString().split('T')[0], limit: 5 })
-    todayTasks.value = data || []
+    // 获取所有进行中或未开始的任务
+    const data = await taskApi.getTaskList()
+    if (data && data.length > 0) {
+      // 取前5个任务
+      todayTasks.value = data.slice(0, 5).map(t => ({
+        id: t.id,
+        name: t.title,
+        projectName: t.project_name || '未知项目',
+        status: t.status === 'todo' ? 'pending' : t.status === 'done' ? 'completed' : t.status,
+        duration: t.total_duration || 0
+      }))
+    } else {
+      todayTasks.value = []
+    }
   } catch (error) {
     console.error('Failed to fetch today tasks:', error)
-    // 使用模拟数据
-    todayTasks.value = [
-      { id: 1, name: 'Python基础语法复习', projectName: 'Python学习', status: 'pending', duration: 1800 },
-      { id: 2, name: '阅读英语文章', projectName: '英语提升', status: 'in_progress', duration: 3600 },
-      { id: 3, name: '算法题练习', projectName: '数据结构', status: 'pending', duration: 0 }
-    ]
+    todayTasks.value = []
   }
 }
 
 // 获取最近项目
 async function fetchRecentProjects() {
   try {
-    const data = await projectApi.getProjectList({ limit: 6, sort: 'recent' })
-    recentProjects.value = data || []
+    const data = await projectApi.getProjectList()
+    if (data && data.length > 0) {
+      // 取前6个项目
+      recentProjects.value = data.slice(0, 6).map(p => ({
+        id: p.id,
+        name: p.name,
+        icon: p.icon,
+        color: p.color_hex,
+        energyPercent: p.energy_percent || 0,
+        taskCount: p.total_tasks || 0
+      }))
+    } else {
+      recentProjects.value = []
+    }
   } catch (error) {
     console.error('Failed to fetch recent projects:', error)
-    // 使用模拟数据
-    recentProjects.value = [
-      {
-        id: 1,
-        name: 'Python学习',
-        icon: 'fab fa-python',
-        color: '#4A90E2',
-        energyPercent: 35,
-        taskCount: 12
-      },
-      {
-        id: 2,
-        name: '英语提升',
-        icon: 'fas fa-language',
-        color: '#66BB6A',
-        energyPercent: 25,
-        taskCount: 8
-      },
-      {
-        id: 3,
-        name: '数据结构',
-        icon: 'fas fa-project-diagram',
-        color: '#FF9800',
-        energyPercent: 20,
-        taskCount: 6
-      }
-    ]
+    recentProjects.value = []
   }
 }
 
 // 开始任务计时
-function startTask(task) {
+async function startTask(task) {
   if (timerStore.currentTask?.id === task.id && timerStore.isRunning) {
     toastStore.showInfo('该任务正在计时中')
     return
   }
 
-  timerStore.startTimer(task)
-  toastStore.showSuccess(`开始计时：${task.name}`)
+  try {
+    // 调用后端 API 开始计时
+    await taskApi.startTimer(task.id)
+    timerStore.startTimer(task)
+    toastStore.showSuccess(`开始计时：${task.name}`)
+  } catch (error) {
+    console.error('Failed to start timer:', error)
+    toastStore.showError('开始计时失败')
+  }
 }
 
 // 快速开始计时
