@@ -261,11 +261,29 @@ async function resumeTimer() {
 }
 
 async function stopTimer() {
+  // 检查计时器状态
+  const wasRunning = timerStore.isRunning
   const { task, time } = timerStore.stopTimer()
+
+  // 如果计时器之前是暂停状态，说明后端已经记录了结束时间
+  // 此时不需要再调用后端API，只需要刷新任务列表即可
+  if (!wasRunning) {
+    fetchTasks()
+    toastStore.showSuccess('计时已结束')
+    return
+  }
+
+  // 计时器之前是运行状态，需要调用后端API停止计时
   try {
     await taskApi.stopTimer(task.id)
     fetchTasks()
-  } catch (error) {}
+    toastStore.showSuccess('计时已停止')
+  } catch (error) {
+    console.error('停止计时失败:', error)
+    // 如果后端报错，说明计时器状态不一致，清空前端状态
+    timerStore.resetTimer()
+    toastStore.showError('停止计时失败，计时器状态已重置')
+  }
 }
 
 function openCreateModal() {

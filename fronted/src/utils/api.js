@@ -115,8 +115,8 @@ export const taskApi = {
  */
 export const statisticsApi = {
   // 获取概览数据
-  getOverview() {
-    return request.get('/statistics/overview')
+  getOverview(params) {
+    return request.get('/statistics/overview', { params })
   },
 
   // 获取项目时间分布

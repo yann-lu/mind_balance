@@ -103,26 +103,6 @@
         </div>
       </div>
 
-      <!-- 每日学习时长趋势（折线图） -->
-      <section class="card p-6">
-        <h3 class="text-lg font-semibold text-text-primary dark:text-text-dark mb-4">
-          <i class="fas fa-chart-line text-primary mr-2"></i>每日学习时长趋势
-        </h3>
-        <div class="relative h-72">
-          <Line
-            v-if="dailyTrendData.labels.length > 0"
-            :data="dailyTrendData"
-            :options="chartOptions.line"
-          />
-          <div v-else class="absolute inset-0 flex items-center justify-center text-gray-400">
-            <div class="text-center">
-              <i class="fas fa-chart-line text-4xl mb-3"></i>
-              <p class="text-sm">暂无学习数据，开始记录吧 📝</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <!-- 项目详细数据 -->
       <section class="card p-6">
         <h3 class="text-lg font-semibold text-text-primary dark:text-text-dark mb-4">
@@ -184,6 +164,69 @@
         <div v-else class="text-center py-12 text-gray-400">
           <i class="fas fa-folder-open text-4xl mb-3"></i>
           <p class="text-sm">暂无项目数据</p>
+        </div>
+      </section>
+
+      <!-- 每日学习时长趋势（折线图） -->
+      <section class="card p-6">
+        <h3 class="text-lg font-semibold text-text-primary dark:text-text-dark mb-4">
+          <i class="fas fa-chart-line text-primary mr-2"></i>每日学习时长趋势
+        </h3>
+        <div class="relative h-72">
+          <Line
+            v-if="dailyTrendData.labels.length > 0"
+            :data="dailyTrendData"
+            :options="chartOptions.line"
+          />
+          <div v-else class="absolute inset-0 flex items-center justify-center text-gray-400">
+            <div class="text-center">
+              <i class="fas fa-chart-line text-4xl mb-3"></i>
+              <p class="text-sm">暂无学习数据，开始记录吧 📝</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 每日学习明细列表 -->
+        <div v-if="dailyTrendData.labels.length > 0" class="mt-6">
+          <h4 class="text-md font-semibold text-text-primary dark:text-text-dark mb-3">
+            <i class="fas fa-table text-primary mr-2"></i>每日明细
+          </h4>
+          <div class="overflow-x-auto max-h-64 overflow-y-auto">
+            <table class="w-full">
+              <thead class="sticky top-0 bg-white dark:bg-gray-800">
+                <tr class="border-b border-gray-200 dark:border-gray-700">
+                  <th class="text-left py-2 px-4 text-sm font-medium text-gray-600 dark:text-gray-300">日期</th>
+                  <th class="text-right py-2 px-4 text-sm font-medium text-gray-600 dark:text-gray-300">学习时长</th>
+                  <th class="text-right py-2 px-4 text-sm font-medium text-gray-600 dark:text-gray-300">占比</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="(item, index) in dailyTrendList"
+                  :key="index"
+                  class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800"
+                >
+                  <td class="py-2 px-4 text-sm text-text-primary dark:text-text-dark">
+                    {{ item.date }}
+                  </td>
+                  <td class="text-right py-2 px-4 text-sm text-gray-600 dark:text-gray-300">
+                    {{ formatDurationShort(item.duration) }}
+                  </td>
+                  <td class="text-right py-2 px-4 text-sm">
+                    <div class="flex items-center justify-end gap-2">
+                      <div class="w-16 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                        <div
+                          class="h-full bg-primary rounded-full transition-all"
+                          :style="{ width: item.percentage + '%' }"
+                        ></div>
+                      </div>
+                      <span class="text-gray-600 dark:text-gray-300">{{ item.percentage }}%</span>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
     </template>
@@ -274,6 +317,42 @@ const dailyTrendData = ref({
 })
 
 const projectDetails = ref([])
+
+// 计算每日趋势列表（用于明细显示）
+const dailyTrendList = computed(() => {
+  const totalDuration = dailyTrendData.value.datasets[0].data.reduce((a, b) => a + b, 0)
+  return dailyTrendData.value.labels.map((label, index) => {
+    const duration = dailyTrendData.value.datasets[0].data[index] * 60 // 转换为秒
+    const percentage = totalDuration > 0 ? Math.round((duration / (totalDuration * 60)) * 100) : 0
+
+    // 格式化日期显示
+    let displayDate = label
+    if (label.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const date = new Date(label)
+      const today = new Date()
+      const yesterday = new Date(today)
+      yesterday.setDate(yesterday.getDate() - 1)
+
+      if (label === today.toISOString().split('T')[0]) {
+        displayDate = '今天'
+      } else if (label === yesterday.toISOString().split('T')[0]) {
+        displayDate = '昨天'
+      } else {
+        const month = date.getMonth() + 1
+        const day = date.getDate()
+        const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+        const weekday = weekdays[date.getDay()]
+        displayDate = `${month}月${day}日 ${weekday}`
+      }
+    }
+
+    return {
+      date: displayDate,
+      duration: duration,
+      percentage: percentage
+    }
+  }).reverse() // 最新的日期显示在前面
+})
 
 // 时间周期选项
 const periods = [
@@ -368,8 +447,8 @@ const chartOptions = {
 async function fetchStatistics() {
   loading.value = true
   try {
-    // 获取概览数据
-    const overview = await statisticsApi.getOverview()
+    // 获取概览数据 - 需要传入period参数
+    const overview = await statisticsApi.getOverview({ period: selectedPeriod.value })
     overviewData.value = overview || overviewData.value
 
     // 获取项目时间分布
@@ -379,7 +458,7 @@ async function fetchStatistics() {
         labels: projectTime.map(p => p.name),
         datasets: [{
           data: projectTime.map(p => Math.round(p.duration / 60)), // 转换为分钟
-          backgroundColor: projectTime.map(p => p.color),
+          backgroundColor: projectTime.map(p => p.color_hex || p.color),
           borderWidth: 0
         }]
       }
@@ -409,6 +488,7 @@ async function fetchStatistics() {
       // 计算项目详细数据
       projectDetails.value = energy.map(e => ({
         ...e,
+        color: e.color_hex || e.color,
         completedTasks: e.completedTasks || 0,
         totalTasks: e.totalTasks || 0,
         totalDuration: e.totalDuration || 0
